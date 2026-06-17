@@ -56,4 +56,6 @@ Isto xerará un cartafol `dist` cos ficheiros listos para ser despregados en cal
 ## 💡 Notas Adicionais
 O proxecto sufriu unha evolución cara a automatización total da xestión de ocos das reunións. Actualmente, os usuarios non necesitan "publicar" o seu tempo dispoñible de forma manual; o sistema calcúlao automaticamente a partir das reunións xa confirmadas.
 
+Importante!: Se traballas neste proxecto non pushees o arquivo `.env` á rama principal. Este arquivo contén variables de configuración sensibles e non debe compartirse.
+
 © 2026 Lara Loveira Nores. Todos los derechos reservados. Queda prohibida la reproducción, distribución o uso de este proyecto sin autorización expresa del autor.
