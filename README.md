@@ -1,6 +1,5 @@
 # Networking Galicia Suroeste - 2026
 
-# Networking Galicia Suroeste
 
 Unha plataforma web desenvolvida para xestionar o evento de networking "Galicia Suroeste - 2026". Esta aplicación permite aos asistentes rexistrarse, crear un perfil profesional, consultar o directorio doutros profesionais e xestionar reunións 1:1 de xeito eficiente.
 
