@@ -1,13 +1,41 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Building2, Mail, Phone, Calendar, Globe } from "lucide-react";
+
+function ExpandableText({ text, limit = 150 }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!text) return null;
+  if (text.length <= limit) return <span>{text}</span>;
+  
+  return (
+    <span>
+      {expanded ? text : `${text.slice(0, limit)}... `}
+      <button 
+        onClick={() => setExpanded(!expanded)} 
+        className="text-[#00869d] hover:underline font-medium ml-1"
+      >
+        {expanded ? "Ver menos" : "Ler máis..."}
+      </button>
+    </span>
+  );
+}
 
 export default function AttendeeCard({ attendee, onReserveSlot, currentUserId, currentUserAsistira }) {
   const isOwn = attendee.id === currentUserId;
   const initials = `${attendee.nombre?.[0] || ""}${attendee.apellidos?.[0] || ""}`.toUpperCase();
 
   return (
-    <div className={`rounded-xl border p-5 transition-shadow ${attendee.asistira === false ? "bg-muted/30 border-dashed border-muted-foreground/30" : "bg-white border-border hover:shadow-md"}`}>
+    <div 
+      className={`h-full flex flex-col rounded-xl border p-5 transition-shadow ${
+        isOwn 
+          ? "border-[#00869d]/40 shadow-sm" 
+          : attendee.asistira === false 
+            ? "bg-muted/30 border-dashed border-muted-foreground/30" 
+            : "bg-white border-border hover:shadow-md"
+      }`}
+      style={isOwn ? { backgroundColor: '#f0f9fa' } : {}}
+    >
       <div className="flex items-start gap-3 mb-3">
         <div
           className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${attendee.asistira === false ? "grayscale opacity-60" : ""}`}
@@ -50,10 +78,12 @@ export default function AttendeeCard({ attendee, onReserveSlot, currentUserId, c
 
       {(attendee.queBusca || attendee.queOfrece) && (
         <div className="space-y-1 mb-3 text-xs text-muted-foreground border-t border-border pt-2">
-          {attendee.queBusca && <p><span className="font-medium text-foreground">Busca:</span> {attendee.queBusca}</p>}
-          {attendee.queOfrece && <p><span className="font-medium text-foreground">Ofrece:</span> {attendee.queOfrece}</p>}
+          {attendee.queBusca && <p><span className="font-medium text-foreground">Busca:</span> <ExpandableText text={attendee.queBusca} /></p>}
+          {attendee.queOfrece && <p><span className="font-medium text-foreground">Ofrece:</span> <ExpandableText text={attendee.queOfrece} /></p>}
         </div>
       )}
+
+      <div className="flex-1" />
 
       {((attendee.perfilPublico && (attendee.email || attendee.whatsapp)) || attendee.webUrl) && (
         <div className="flex flex-wrap gap-2 text-xs mb-3">
@@ -75,7 +105,7 @@ export default function AttendeeCard({ attendee, onReserveSlot, currentUserId, c
         </div>
       )}
 
-      {!isOwn && onReserveSlot && attendee.asistira !== false && currentUserAsistira !== false && (
+      {!isOwn && onReserveSlot && attendee.asistira !== false && currentUserAsistira !== false && attendee.canReceiveMeetings !== false && (
         <Button
           size="sm"
           className="w-full text-xs gap-1"

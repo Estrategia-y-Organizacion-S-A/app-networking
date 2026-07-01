@@ -1,8 +1,8 @@
 import emailjs from '@emailjs/browser';
 
-const EMAILJS_PUBLIC_KEY = "STcQABf0JKegGjL4v";
-const EMAILJS_SERVICE_ID = "service_e16q9jk";
-const EMAILJS_TEMPLATE_ID = "template_npwnhqh";
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "TU_PUBLIC_KEY";
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
 
 // Evita inicializar si no hay configuración real (evita crasheos)
 const isConfigured = !EMAILJS_PUBLIC_KEY.includes("TU_PUBLIC_KEY");
@@ -22,7 +22,6 @@ async function sendEmail({ to, subject, html }) {
 
   try {
     // Estas variables deben coincidir con las variables que pongas en la plantilla de EmailJS
-    // En tu plantilla de EmailJS debes tener algo como: {{{html_message}}} para que inyecte el HTML
     const templateParams = {
       to_email: to,
       subject: subject,
@@ -51,6 +50,7 @@ export async function sendWelcomeEmail(attendee) {
     <p>Xa podes acceder á plataforma para configurar a túa axenda e solicitar reunións con outros profesionais.</p>
     <p>Vémonos na Xornada.</p>
     <br/>
+    <p>Calquera dúbida, non dubides en contactar connosco a través deste correo electrónico: <strong>clubproduto@galiciasuroeste.gal</strong></p>
     <p>Saúdos,<br/>O equipo de Organización<br/><strong>Evento Networking - Galicia Suroeste | 26 de xuño 2026</strong></p>
   `;
   return sendEmail({ to: attendee.email, subject, html });
@@ -64,6 +64,7 @@ export async function sendMeetingRequestEmail(host, requester, timeRange) {
     <p><strong>Horario:</strong> ${timeRange}</p>
     <p>Por favor, entra na plataforma en "A miña Axenda" para Aceptar ou Rexeitar esta solicitude.</p>
     <br/>
+    <p>Calquera dúbida, non dubides en contactar connosco a través deste correo electrónico: <strong>clubproduto@galiciasuroeste.gal</strong></p>
     <p>Saúdos,<br/>O equipo de Organización<br/><strong>Evento Networking - Galicia Suroeste | 26 de xuño 2026</strong></p>
   `;
   return sendEmail({ to: host.email, subject, html });
@@ -79,6 +80,7 @@ export async function sendMeetingAcceptedEmail(requester, host, timeRange, mesa)
     <p>Lembra ser puntual.</p>
     <p>Por favor, diríxete á aplicación web para ver a túa axenda e comprobar os detalles.</p>
     <br/>
+    <p>Calquera dúbida, non dubides en contactar connosco a través deste correo electrónico: <strong>clubproduto@galiciasuroeste.gal</strong></p>
     <p>Saúdos,<br/>O equipo de Organización<br/><strong>Evento Networking - Galicia Suroeste | 26 de xuño 2026</strong></p>
   `;
   return sendEmail({ to: requester.email, subject, html });
@@ -93,6 +95,7 @@ export async function sendMeetingRejectedEmail(requester, host, timeRange) {
     <p>Convidámoste a buscar outros profesionais no directorio de networking e enviarlles unha nova solicitude para aproveitar o oco.</p>
     <p>Por favor, diríxete á aplicación web para ver a túa axenda e escoller unha nova persoa.</p>
     <br/>
+    <p>Calquera dúbida, non dubides en contactar connosco a través deste correo electrónico: <strong>clubproduto@galiciasuroeste.gal</strong></p>
     <p>Saúdos,<br/>O equipo de Organización<br/><strong>Evento Networking - Galicia Suroeste | 26 de xuño 2026</strong></p>
   `;
   return sendEmail({ to: requester.email, subject, html });
@@ -106,6 +109,7 @@ export async function sendMeetingCancelledEmail(toAttendee, fromAttendee, timeRa
     <p>Ese oco na túa axenda volve estar libre para que poidas axendar con outra persoa ou aceptar novas solicitudes.</p>
     <p>Por favor, diríxete á aplicación web para ver a túa axenda e comprobar os detalles.</p>
     <br/>
+    <p>Calquera dúbida, non dubides en contactar connosco a través deste correo electrónico: <strong>clubproduto@galiciasuroeste.gal</strong></p>
     <p>Saúdos,<br/>O equipo de Organización<br/><strong>Evento Networking - Galicia Suroeste | 26 de xuño 2026</strong></p>
   `;
   return sendEmail({ to: toAttendee.email, subject, html });

@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Loader2, UserPlus, Eye, EyeOff } from "lucide-react";
 import PageLayout from "@/components/layout/PageLayout";
-import { SECTORES, INTERESES } from "@/lib/eventUtils";
+import { SECTORES, INTERESES, EUROPEAN_PREFIXES } from "@/lib/eventUtils";
 import { hashPassword, saveAttendeeSession } from "@/lib/attendeeAuth";
 
 export default function Register() {
@@ -24,7 +24,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
 
   const [form, setForm] = useState({
-    nombre: "", apellidos: "", email: "", empresa: "", whatsapp: "", password: "",
+    nombre: "", apellidos: "", email: "", emailConfirm: "", empresa: "", whatsapp: "", prefijoWhatsapp: "+34", password: "", passwordConfirm: "",
     sector: "", intereses: [], queBusca: "", queOfrece: "",
     perfilPublico: true, aceptoPolitica: false, asistira: true,
     webUrl: "",
@@ -66,7 +66,15 @@ export default function Register() {
     init();
   }, []);
 
-  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const updateForm = (key, value) => {
+    let finalValue = value;
+    if (key === "nombre" && value) {
+      finalValue = value.charAt(0).toUpperCase() + value.slice(1);
+    } else if (key === "apellidos" && value) {
+      finalValue = value.split(" ").map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : "").join(" ");
+    }
+    setForm(prev => ({ ...prev, [key]: finalValue }));
+  };
 
   const toggleInteres = (i) => {
     setForm(prev => {
@@ -80,8 +88,14 @@ export default function Register() {
   const handleNext = () => {
     setError("");
     if (step === 1) {
-      if (!form.nombre || !form.apellidos || !form.email || !form.empresa || !form.password) {
+      if (!form.nombre || !form.apellidos || !form.email || !form.emailConfirm || !form.empresa || !form.password || !form.passwordConfirm) {
         setError("Por favor, completa todos os campos obrigatorios."); return;
+      }
+      if (form.email.trim().toLowerCase() !== form.emailConfirm.trim().toLowerCase()) {
+        setError("Os enderezos de correo electrónico non coinciden."); return;
+      }
+      if (form.password !== form.passwordConfirm) {
+        setError("Os contrasinais non coinciden."); return;
       }
       if (form.password.length < 8 || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) {
         setError("O contrasinal debe ter polo menos 8 caracteres, unha maiúscula, unha minúscula e un número."); return;
@@ -120,7 +134,7 @@ export default function Register() {
         apellidos: form.apellidos.trim(),
         email: form.email.trim().toLowerCase(),
         empresa: form.empresa.trim(),
-        whatsapp: form.whatsapp.trim(),
+        whatsapp: form.whatsapp.trim() ? `${form.prefijoWhatsapp} ${form.whatsapp.trim()}` : "",
         sector: form.sector === "Outros" ? form.sectorOtro.trim() : form.sector,
         intereses: form.intereses,
         queBusca: form.queBusca.trim(),
@@ -222,35 +236,102 @@ export default function Register() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Nome <span className="text-destructive">*</span></Label>
-                    <Input value={form.nombre} onChange={e => updateForm("nombre", e.target.value)} className="mt-1.5" />
+                    <Input value={form.nombre} onChange={e => updateForm("nombre", e.target.value)} className="mt-1.5" autoFocus />
                   </div>
                   <div>
                     <Label>Apelidos <span className="text-destructive">*</span></Label>
                     <Input value={form.apellidos} onChange={e => updateForm("apellidos", e.target.value)} className="mt-1.5" />
                   </div>
                 </div>
-                <div>
-                  <Label>Email <span className="text-destructive">*</span></Label>
-                  <Input type="email" value={form.email} onChange={e => updateForm("email", e.target.value)} placeholder="teu@email.com" className="mt-1.5" />
-                  <p className="text-xs text-muted-foreground mt-1.5">Usarase para acceder á plataforma.</p>
-                </div>
-                <div className="relative">
-                  <Label>Contrasinal <span className="text-destructive">*</span></Label>
-                  <div className="relative">
-                    <Input type={showPassword ? "text" : "password"} value={form.password} onChange={e => updateForm("password", e.target.value)} placeholder="Mín. 8 caracteres, 1 maiúscula, 1 minúscula e 1 número" className="mt-1.5 pr-10" />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Email <span className="text-destructive">*</span></Label>
+                    <Input type="email" value={form.email} onChange={e => updateForm("email", e.target.value)} placeholder="teu@email.com" className="mt-1.5" />
+                  </div>
+                  <div>
+                    <Label>Confirmar Email <span className="text-destructive">*</span></Label>
+                    <Input 
+                      type="email" 
+                      value={form.emailConfirm} 
+                      onChange={e => updateForm("emailConfirm", e.target.value)} 
+                      placeholder="teu@email.com" 
+                      className={`mt-1.5 ${form.emailConfirm ? (form.email.trim().toLowerCase() === form.emailConfirm.trim().toLowerCase() ? 'border-green-500 focus-visible:ring-green-500' : 'border-destructive focus-visible:ring-destructive') : ''}`} 
+                    />
+                    {form.emailConfirm && form.email.trim().toLowerCase() === form.emailConfirm.trim().toLowerCase() && (
+                      <p className="text-[10px] text-green-600 mt-1 font-medium flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Os enderezos coinciden
+                      </p>
+                    )}
+                    {form.emailConfirm && form.email.trim().toLowerCase() !== form.emailConfirm.trim().toLowerCase() && (
+                      <p className="text-[10px] text-destructive mt-1 font-medium leading-tight">
+                        Os enderezos non coinciden.
+                      </p>
+                    )}
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground mt-1.5">Usarase para acceder á plataforma e recibir as notificacións.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="relative">
+                    <Label>Contrasinal <span className="text-destructive">*</span></Label>
+                    <div className="relative">
+                      <Input 
+                        type={showPassword ? "text" : "password"} 
+                        value={form.password} 
+                        onChange={e => updateForm("password", e.target.value)} 
+                        placeholder="Contrasinal" 
+                        className={`mt-1.5 pr-10 ${form.password ? ((form.password.length >= 8 && /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) ? 'border-green-500 focus-visible:ring-green-500' : 'border-destructive focus-visible:ring-destructive') : ''}`} 
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {form.password && !(form.password.length >= 8 && /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) && (
+                      <p className="text-[10px] text-destructive mt-1 font-medium leading-tight">
+                        Debe ter polo menos 8 caracteres, unha maiúscula, unha minúscula e un número.
+                      </p>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Label>Confirmar Contrasinal <span className="text-destructive">*</span></Label>
+                    <div className="relative">
+                      <Input 
+                        type={showPassword ? "text" : "password"} 
+                        value={form.passwordConfirm} 
+                        onChange={e => updateForm("passwordConfirm", e.target.value)} 
+                        placeholder="Repite o contrasinal" 
+                        className={`mt-1.5 pr-10 ${form.passwordConfirm ? (form.password === form.passwordConfirm ? 'border-green-500 focus-visible:ring-green-500' : 'border-destructive focus-visible:ring-destructive') : ''}`}
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {form.passwordConfirm && form.password === form.passwordConfirm && (
+                      <p className="text-[10px] text-green-600 mt-1 font-medium flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Os contrasinais coinciden
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                   <div>
                     <Label>Empresa <span className="text-destructive">*</span></Label>
                     <Input value={form.empresa} onChange={e => updateForm("empresa", e.target.value)} className="mt-1.5" />
                   </div>
                   <div>
                     <Label>WhatsApp</Label>
-                    <Input type="tel" value={form.whatsapp} onChange={e => updateForm("whatsapp", e.target.value)} placeholder="+34 600 000 000" className="mt-1.5" />
+                    <div className="flex mt-1.5">
+                      <Select value={form.prefijoWhatsapp} onValueChange={v => updateForm("prefijoWhatsapp", v)}>
+                        <SelectTrigger className="w-[110px] rounded-r-none border-r-0 focus:ring-0 focus:ring-offset-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EUROPEAN_PREFIXES.map(p => (
+                            <SelectItem key={p.code} value={p.code}>{p.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input type="tel" pattern="[0-9]*" value={form.whatsapp} onChange={e => updateForm("whatsapp", e.target.value.replace(/[^0-9]/g, ''))} placeholder="600000000" className="rounded-l-none" />
+                    </div>
                   </div>
                 </div>
                 {(!eventConfig || eventConfig.allowNonAttending !== false) && (
@@ -312,12 +393,14 @@ export default function Register() {
                   </div>
                 </div>
                 <div>
-                  <Label>Que buscas no evento? (Opcional)</Label>
-                  <Textarea value={form.queBusca} onChange={e => updateForm("queBusca", e.target.value)} placeholder="Ex: Busco coñecer empresas tecnolóxicas para posibles colaboracións..." className="mt-1.5 resize-none h-20" />
+                  <Label>Que buscas no evento? (Opcional) <span className="text-xs text-muted-foreground font-normal ml-2">(Máx. 500 caracteres)</span></Label>
+                  <Textarea maxLength={500} value={form.queBusca} onChange={e => updateForm("queBusca", e.target.value)} placeholder="Ex: Busco coñecer empresas tecnolóxicas para posibles colaboracións..." className="mt-1.5 resize-none h-20" />
+                  <p className="text-right text-[10px] text-muted-foreground mt-1">{form.queBusca.length}/500</p>
                 </div>
                 <div>
-                  <Label>Que ofreces? <span className="text-destructive">*</span></Label>
-                  <Textarea value={form.queOfrece} onChange={e => updateForm("queOfrece", e.target.value)} placeholder="Ex: Ofrezo servizos de consultoría dixital..." className="mt-1.5 resize-none h-20" />
+                  <Label>Que ofreces? <span className="text-destructive">*</span> <span className="text-xs text-muted-foreground font-normal ml-2">(Máx. 500 caracteres)</span></Label>
+                  <Textarea maxLength={500} value={form.queOfrece} onChange={e => updateForm("queOfrece", e.target.value)} placeholder="Ex: Ofrezo servizos de consultoría dixital..." className="mt-1.5 resize-none h-20" />
+                  <p className="text-right text-[10px] text-muted-foreground mt-1">{form.queOfrece.length}/500</p>
                 </div>
                 <div className="mt-4">
                   <Label>Páxina web ou Catálogo de produtos (Opcional)</Label>

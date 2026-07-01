@@ -17,7 +17,47 @@ export const INTERESES = [
   "Innovación tecnolóxica", "Eventos e promoción", "Gastronomía local"
 ];
 
-// ─── Constantes ─────────────────────────────────────────────────
+// ─── Prefijos Telefónicos Europeos ──────────────────────────────
+export const EUROPEAN_PREFIXES = [
+  { code: "+34", label: "🇪🇸 +34" },
+  { code: "+49", label: "🇩🇪 +49" },
+  { code: "+376", label: "🇦🇩 +376" },
+  { code: "+43", label: "🇦🇹 +43" },
+  { code: "+32", label: "🇧🇪 +32" },
+  { code: "+359", label: "🇧🇬 +359" },
+  { code: "+385", label: "🇭🇷 +385" },
+  { code: "+45", label: "🇩🇰 +45" },
+  { code: "+421", label: "🇸🇰 +421" },
+  { code: "+386", label: "🇸🇮 +386" },
+  { code: "+372", label: "🇪🇪 +372" },
+  { code: "+358", label: "🇫🇮 +358" },
+  { code: "+33", label: "🇫🇷 +33" },
+  { code: "+30", label: "🇬🇷 +30" },
+  { code: "+36", label: "🇭🇺 +36" },
+  { code: "+353", label: "🇮🇪 +353" },
+  { code: "+354", label: "🇮🇸 +354" },
+  { code: "+39", label: "🇮🇹 +39" },
+  { code: "+371", label: "🇱🇻 +371" },
+  { code: "+423", label: "🇱🇮 +423" },
+  { code: "+370", label: "🇱🇹 +370" },
+  { code: "+352", label: "🇱🇺 +352" },
+  { code: "+356", label: "🇲🇹 +356" },
+  { code: "+377", label: "🇲🇨 +377" },
+  { code: "+382", label: "🇲🇪 +382" },
+  { code: "+47", label: "🇳🇴 +47" },
+  { code: "+31", label: "🇳🇱 +31" },
+  { code: "+48", label: "🇵🇱 +48" },
+  { code: "+351", label: "🇵🇹 +351" },
+  { code: "+44", label: "🇬🇧 +44" },
+  { code: "+420", label: "🇨🇿 +420" },
+  { code: "+40", label: "🇷🇴 +40" },
+  { code: "+378", label: "🇸🇲 +378" },
+  { code: "+46", label: "🇸🇪 +46" },
+  { code: "+41", label: "🇨🇭 +41" },
+  { code: "+380", label: "🇺🇦 +380" },
+];
+
+// ─── Constantes
 export const MAX_MEETINGS = 4;
 
 export const TIME_SLOTS = [
@@ -27,10 +67,15 @@ export const TIME_SLOTS = [
   { start: "21:45", end: "22:00", label: "21:45 - 22:00" }
 ];
 
-// ─── Admin auth ─────────────────────────────────────────────────
-const ADMIN_EMAIL = "networking@eosa.com";
-const ADMIN_PASSWORD_HASH = "3dcb93ebb2ca346a3eb0c6bede84be275aeea5c9bf6f706ea49b526f098d5c2e";
-const ADMIN_SECRET_TOKEN = "eosa_admin_token_2026_secured_7x9q";
+// ─── Admin auth
+export const ADMIN_EMAIL = "networking@eosa.com";
+
+export const BLOCKED_MEETING_EMAILS = [
+  "eva.gil@eurual.gal",
+  "eva.gil@eurural.gal",
+  "anadia.alvarez@eurural.gal",
+  "moutumuro@eosa.com"
+];
 
 export async function validateAdminLogin(email, password) {
   if (email !== ADMIN_EMAIL) return false;
@@ -43,21 +88,16 @@ export async function validateAdminLogin(email, password) {
   }
 }
 
-export function loginAdmin(email) {
-  localStorage.setItem("admin_token", ADMIN_SECRET_TOKEN);
-  localStorage.setItem("admin_email", email);
-}
-
-export function logoutAdmin() {
-  localStorage.removeItem("admin_token");
-  localStorage.removeItem("admin_email");
+export async function logoutAdmin() {
+  await auth.signOut();
+  localStorage.removeItem("admin_logged_in");
 }
 
 export function isAdminLoggedIn() {
-  return localStorage.getItem("admin_token") === ADMIN_SECRET_TOKEN;
+  return localStorage.getItem("admin_logged_in") === "true";
 }
 
-// ─── Networking visibility ──────────────────────────────────────
+// ─── Networking visibility
 export function isNetworkingVisible(config) {
   if (!config) return false;
   if (config.networkingActivo) return true;
@@ -70,14 +110,14 @@ export function isNetworkingVisible(config) {
   return now >= dayBefore;
 }
 
-// ─── Time utilities ─────────────────────────────────────────────
+// ─── Time utilities 
 export function timeToMinutes(time) {
   if (!time) return 0;
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
 }
 
-// ─── Meeting slot utilities ─────────────────────────────────────
+// ─── Meeting slot utilities
 
 
 export function countMeetings(userId, slots) {

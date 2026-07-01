@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { base44, db } from "@/api/base44Client";
+import { runTransaction, doc } from "firebase/firestore";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, Building2, LogOut, Loader2, MapPin, Check, X, Send } from "lucide-react";
@@ -15,6 +17,8 @@ export default function MiAgenda() {
   const [loading, setLoading] = useState(false);
   const [slots, setSlots] = useState([]);
   const [allMesas, setAllMesas] = useState([]);
+  const [cancelRequestSlot, setCancelRequestSlot] = useState(null);
+  const [cancelMeetingSlot, setCancelMeetingSlot] = useState(null);
 
   useEffect(() => {
     if (currentAttendee) loadData();
@@ -38,7 +42,8 @@ export default function MiAgenda() {
     
     mySlots.sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
     setSlots(mySlots);
-    setAllMesas(mesas || []);
+    const sortedMesas = (mesas || []).sort((a, b) => (a.color || '').localeCompare(b.color || '', undefined, { numeric: true, sensitivity: 'base' }));
+    setAllMesas(sortedMesas);
     setLoading(false);
   };
 
@@ -50,128 +55,195 @@ export default function MiAgenda() {
   const handleAcceptRequest = async (slot, requesterId) => {
     setLoading(true);
     
-    // Refetch all slots to ensure we have the latest occupied tables
     const latestSlots = await base44.entities.MeetingSlot.list();
-    const occupiedTableIds = latestSlots
-      .filter(s => s.estado === "reservado" && s.fecha === slot.fecha && s.horaInicio === slot.horaInicio)
-      .map(s => String(s.mesaId));
-
-    // Check if I already have a conflict
     if (hasBookingConflict(currentAttendee.id, slot.fecha, slot.horaInicio, slot.horaFin, latestSlots, slot.id)) {
       alert("Xa tes unha reunión confirmada ou outra petición pendente nese horario.");
       setLoading(false);
       return;
     }
 
-    // Check if the requester already has a conflict
     if (hasBookingConflict(requesterId, slot.fecha, slot.horaInicio, slot.horaFin, latestSlots, slot.id)) {
       alert("Esta persoa xa ten outra reunión confirmada nese horario. O ideal sería que rexeites a petición.");
       setLoading(false);
       return;
     }
+
+    try {
+      let assignedTable = null;
+      let requester = null;
+      let rejectedRequesters = [];
+
+      await runTransaction(db, async (transaction) => {
+        const slotRef = doc(db, "meetingSlots", String(slot.id));
+        const slotDoc = await transaction.get(slotRef);
+        if (!slotDoc.exists()) throw new Error("A reunión xa non existe.");
+        
+        const currentData = slotDoc.data();
+        if (currentData.estado === "reservado") {
+          throw new Error("A reunión xa foi aceptada.");
+        }
+
+        const ocupadasRef = doc(db, "mesas_ocupadas", `${slot.fecha}_${slot.horaInicio.replace(':', '')}`);
+        const ocupadasDoc = await transaction.get(ocupadasRef);
+        const ocupadas = ocupadasDoc.exists() ? (ocupadasDoc.data().tables || []) : [];
+
+        const legacyOccupied = latestSlots
+          .filter(s => s.estado === "reservado" && s.fecha === slot.fecha && s.horaInicio === slot.horaInicio)
+          .map(s => String(s.mesaId));
+        const allOcupadas = Array.from(new Set([...ocupadas, ...legacyOccupied]));
+
+        const availableTables = allMesas.filter(m => !allOcupadas.includes(String(m.id)));
+        if (availableTables.length === 0) {
+          throw new Error("Non hai mesas dispoñibles nesta franxa horaria.");
+        }
+        
+        assignedTable = availableTables[0];
+        
+        transaction.set(ocupadasRef, { tables: [...ocupadas, String(assignedTable.id)] }, { merge: true });
+
+        const updatedSolicitantes = (currentData.solicitantes || []).map(req => {
+          if (String(req.id) === String(requesterId)) return { ...req, estado: "aceptado" };
+          return { ...req, estado: "rechazado" };
+        });
+        
+        requester = updatedSolicitantes.find(req => String(req.id) === String(requesterId));
+        rejectedRequesters = updatedSolicitantes.filter(req => req.estado === "rechazado" && (currentData.solicitantes || []).find(s => String(s.id) === String(req.id))?.estado === "pendiente");
+
+        transaction.update(slotRef, {
+          estado: "reservado",
+          reservadoPorId: requester.id,
+          reservadoPorNombre: `${requester.nombre} ${requester.apellidos}`,
+          reservadoPorEmail: requester.email,
+          mesaId: assignedTable.id,
+          mesaColor: assignedTable.color,
+          solicitantes: updatedSolicitantes
+        });
+      });
+
+      await sendMeetingAcceptedEmail(requester, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`, assignedTable);
+      for (const rej of rejectedRequesters) {
+        await sendMeetingRejectedEmail(rej, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`);
+      }
       
-    const availableTables = allMesas.filter(m => !occupiedTableIds.includes(String(m.id)));
-    
-    if (availableTables.length === 0) {
-      alert("Non hai mesas dispoñibles nesta franxa horaria. A capacidade está completa.");
+      base44.entities.MeetingSlot.clearCache();
+      await loadData();
+    } catch (e) {
+      alert(e.message);
       setLoading(false);
-      return;
     }
-    
-    const assignedTable = availableTables[0];
-    
-    // Update solicitantes
-    const updatedSolicitantes = (slot.solicitantes || []).map(req => {
-      if (String(req.id) === String(requesterId)) return { ...req, estado: "aceptado" };
-      return { ...req, estado: "rechazado" }; // Rechazamos a los demás automáticamente
-    });
-    
-    const requester = updatedSolicitantes.find(req => String(req.id) === String(requesterId));
-    
-    await base44.entities.MeetingSlot.update(slot.id, {
-      estado: "reservado",
-      reservadoPorId: requester.id,
-      reservadoPorNombre: `${requester.nombre} ${requester.apellidos}`,
-      reservadoPorEmail: requester.email,
-      mesaId: assignedTable.id,
-      mesaColor: assignedTable.color,
-      solicitantes: updatedSolicitantes
-    });
-    
-    // Correos simulados
-    await sendMeetingAcceptedEmail(requester, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`, assignedTable);
-    
-    const rejectedRequesters = updatedSolicitantes.filter(req => req.estado === "rechazado" && (slot.solicitantes || []).find(s => String(s.id) === String(req.id))?.estado === "pendiente");
-    for (const rej of rejectedRequesters) {
-      await sendMeetingRejectedEmail(rej, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`);
-    }
-    
-    await loadData();
   };
 
   const handleRejectRequest = async (slot, requesterId) => {
     setLoading(true);
-    const updatedSolicitantes = (slot.solicitantes || []).map(req => {
-      if (String(req.id) === String(requesterId)) return { ...req, estado: "rechazado" };
-      return req;
-    });
-    
-    await base44.entities.MeetingSlot.update(slot.id, {
-      solicitantes: updatedSolicitantes
-    });
-    
-    const requester = updatedSolicitantes.find(req => String(req.id) === String(requesterId));
-    await sendMeetingRejectedEmail(requester, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`);
-    
-    await loadData();
-  };
+    let requester = null;
+    try {
+      await runTransaction(db, async (transaction) => {
+        const slotRef = doc(db, "meetingSlots", String(slot.id));
+        const slotDoc = await transaction.get(slotRef);
+        if (!slotDoc.exists()) return;
+        
+        const currentData = slotDoc.data();
+        const updatedSolicitantes = (currentData.solicitantes || []).map(req => {
+          if (String(req.id) === String(requesterId)) return { ...req, estado: "rechazado" };
+          return req;
+        });
+        
+        requester = updatedSolicitantes.find(req => String(req.id) === String(requesterId));
+        transaction.update(slotRef, { solicitantes: updatedSolicitantes });
+      });
 
-  const handleCancelRequest = async (slot) => {
-    if (!window.confirm("Seguro que queres cancelar esta petición? O oco volverá a quedar libre.")) return;
-    setLoading(true);
-    const updatedSolicitantes = (slot.solicitantes || []).map(req => {
-      if (String(req.id) === String(currentAttendee.id)) return { ...req, estado: "cancelado" };
-      return req;
-    });
-    
-    await base44.entities.MeetingSlot.update(slot.id, {
-      solicitantes: updatedSolicitantes
-    });
-    
-    await loadData();
-  };
-
-  const handleCancelMeeting = async (slot) => {
-    if (!window.confirm("Seguro que queres cancelar esta reunión?")) return;
-    setLoading(true);
-    
-    const amIHost = String(slot.hostId) === String(currentAttendee.id);
-    const otherId = amIHost ? slot.reservadoPorId : slot.hostId;
-    
-    // Obtenemos el otro asistente para mandarle el mail
-    const otherResult = await base44.entities.Attendee.filter({ id: Number(otherId) });
-    const otherAttendee = otherResult[0];
-
-    const updatedSolicitantes = (slot.solicitantes || []).map(req => {
-      if (String(req.id) === String(slot.reservadoPorId)) return { ...req, estado: "cancelado" };
-      return req;
-    });
-
-    await base44.entities.MeetingSlot.update(slot.id, {
-      estado: "disponible",
-      reservadoPorId: null,
-      reservadoPorNombre: null,
-      reservadoPorEmail: null,
-      mesaId: null,
-      mesaColor: null,
-      solicitantes: updatedSolicitantes
-    });
-    
-    if (otherAttendee) {
-      await sendMeetingCancelledEmail(otherAttendee, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`);
+      if (requester) {
+        await sendMeetingRejectedEmail(requester, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`);
+      }
+      base44.entities.MeetingSlot.clearCache();
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      setLoading(false);
     }
+  };
+
+  const executeCancelRequest = async () => {
+    if (!cancelRequestSlot) return;
+    const slot = cancelRequestSlot;
+    setLoading(true);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const slotRef = doc(db, "meetingSlots", String(slot.id));
+        const slotDoc = await transaction.get(slotRef);
+        if (!slotDoc.exists()) return;
+        
+        const currentData = slotDoc.data();
+        const updatedSolicitantes = (currentData.solicitantes || []).map(req => {
+          if (String(req.id) === String(currentAttendee.id)) return { ...req, estado: "cancelado" };
+          return req;
+        });
+        
+        transaction.update(slotRef, { solicitantes: updatedSolicitantes });
+      });
+
+      base44.entities.MeetingSlot.clearCache();
+      await loadData();
+      setCancelRequestSlot(null);
+    } catch (e) {
+      console.error(e);
+      setLoading(false);
+    }
+  };
+
+  const executeCancelMeeting = async () => {
+    if (!cancelMeetingSlot) return;
+    const slot = cancelMeetingSlot;
+    setLoading(true);
     
-    await loadData();
+    try {
+      const amIHost = String(slot.hostId) === String(currentAttendee.id);
+      const otherId = amIHost ? slot.reservadoPorId : slot.hostId;
+      const otherResult = await base44.entities.Attendee.filter({ id: Number(otherId) });
+      const otherAttendee = otherResult[0];
+
+      await runTransaction(db, async (transaction) => {
+        const slotRef = doc(db, "meetingSlots", String(slot.id));
+        const slotDoc = await transaction.get(slotRef);
+        if (!slotDoc.exists()) throw new Error("A reunión xa non existe.");
+        
+        const currentData = slotDoc.data();
+        const ocupadasRef = doc(db, "mesas_ocupadas", `${slot.fecha}_${slot.horaInicio.replace(':', '')}`);
+        const ocupadasDoc = await transaction.get(ocupadasRef);
+        
+        if (ocupadasDoc.exists()) {
+          const ocupadas = ocupadasDoc.data().tables || [];
+          const newOcupadas = ocupadas.filter(id => id !== String(currentData.mesaId));
+          transaction.set(ocupadasRef, { tables: newOcupadas }, { merge: true });
+        }
+
+        const updatedSolicitantes = (currentData.solicitantes || []).map(req => {
+          if (String(req.id) === String(currentData.reservadoPorId)) return { ...req, estado: "cancelado" };
+          return req;
+        });
+
+        transaction.update(slotRef, {
+          estado: "disponible",
+          reservadoPorId: null,
+          reservadoPorNombre: null,
+          reservadoPorEmail: null,
+          mesaId: null,
+          mesaColor: null,
+          solicitantes: updatedSolicitantes
+        });
+      });
+
+      if (otherAttendee) {
+        await sendMeetingCancelledEmail(otherAttendee, currentAttendee, `${slot.horaInicio} - ${slot.horaFin}`);
+      }
+      
+      base44.entities.MeetingSlot.clearCache();
+      await loadData();
+      setCancelMeetingSlot(null);
+    } catch (e) {
+      alert(e.message);
+      setLoading(false);
+    }
   };
 
 
@@ -394,7 +466,7 @@ export default function MiAgenda() {
                                 <span className="flex items-center gap-1.5 text-foreground"><Calendar className="w-4 h-4 text-muted-foreground" /> {slot.fecha}</span>
                                 <span className="flex items-center gap-1.5 font-medium" style={{ color: '#00869d' }}><Clock className="w-4 h-4" /> {slot.horaInicio}</span>
                               </div>
-                              <Button variant="ghost" size="icon" onClick={() => handleCancelMeeting(slot)} className="text-destructive hover:text-destructive hover:bg-destructive/10" title="Cancelar reunión">
+                              <Button variant="ghost" size="icon" onClick={() => setCancelMeetingSlot(slot)} className="text-destructive hover:text-destructive hover:bg-destructive/10" title="Cancelar reunión">
                                 <X className="w-4 h-4" />
                               </Button>
                             </div>
@@ -425,7 +497,7 @@ export default function MiAgenda() {
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 whitespace-nowrap">Agardando...</Badge>
-                            <Button variant="ghost" size="sm" onClick={() => handleCancelRequest(slot)} className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs">
+                            <Button variant="ghost" size="sm" onClick={() => setCancelRequestSlot(slot)} className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs">
                               Cancelar
                             </Button>
                           </div>
@@ -460,14 +532,16 @@ export default function MiAgenda() {
                 </div>
               </div>
 
-              <div className="bg-[#e5f3f5] rounded-xl border border-[#00869d]/20 p-4 text-sm text-center">
-                <p className="text-[#00869d]">
+              <div className="bg-[#e5f3f5] rounded-xl border border-[#00869d]/20 p-4 text-sm text-center flex flex-col items-center">
+                <p className="text-[#00869d] mb-2">
                   Queres modificar ou engadir algún dato do teu perfil?
-                  <br />
-                  <a href="/mi-perfil" className="font-semibold underline mt-1 inline-block">
-                    Ir ao meu Perfil
-                  </a>
                 </p>
+                <div className="bg-white/60 text-[#00869d] text-[11px] p-2 rounded border border-[#00869d]/10 mb-3 text-left leading-tight">
+                  <strong>Aviso:</strong> Aproveita para revisar que o teu <strong>email</strong> estea ben escrito. Se hai unha errata, non recibirás os avisos de novas reunións.
+                </div>
+                <a href="/mi-perfil" className="font-semibold underline inline-block text-[#00869d]">
+                  Ir ao meu Perfil
+                </a>
               </div>
 
               <div className="bg-[#FFF5ED] rounded-xl border border-orange-200 p-4 text-sm text-center">
@@ -480,6 +554,43 @@ export default function MiAgenda() {
             </div>
           </div>
         )}
+
+        <Dialog open={!!cancelRequestSlot} onOpenChange={() => setCancelRequestSlot(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Cancelar solicitude</DialogTitle>
+              <DialogDescription>
+                Seguro que queres cancelar esta petición? O oco volverá a quedar libre.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button variant="outline" onClick={() => setCancelRequestSlot(null)} disabled={loading}>Volver</Button>
+              <Button variant="destructive" onClick={executeCancelRequest} disabled={loading}>
+                {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Si, cancelar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!cancelMeetingSlot} onOpenChange={() => setCancelMeetingSlot(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Cancelar reunión confirmada</DialogTitle>
+              <DialogDescription>
+                Seguro que queres cancelar esta reunión? Enviaráselle un aviso automático á outra persoa informando da cancelación.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button variant="outline" onClick={() => setCancelMeetingSlot(null)} disabled={loading}>Mantela reunión</Button>
+              <Button variant="destructive" onClick={executeCancelMeeting} disabled={loading}>
+                {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Si, cancelar reunión
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </PageLayout>
   );

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, Calendar, CheckCircle, Loader2, Building2, AlertCircle } from "lucide-react";
+import { arrayUnion } from "firebase/firestore";
 import { base44 } from "@/api/base44Client";
 import { countMeetings, MAX_MEETINGS, hasBookingConflict, TIME_SLOTS } from "@/lib/eventUtils";
 import { sendMeetingRequestEmail } from "@/lib/emailService";
@@ -73,15 +74,12 @@ export default function SlotModal({ host, currentAttendee, allSlots, eventDate, 
       const existingSlot = allSlots.find(s => String(s.hostId) === String(host.id) && s.horaInicio === ts.start);
 
       if (existingSlot) {
-        const currentSolicitantes = Array.isArray(existingSlot.solicitantes) 
-          ? existingSlot.solicitantes.filter(req => String(req.id) !== String(currentAttendee.id)) 
-          : [];
-        currentSolicitantes.push(newSolicitante);
         await base44.entities.MeetingSlot.update(existingSlot.id, {
-          solicitantes: currentSolicitantes
+          solicitantes: arrayUnion(newSolicitante)
         });
       } else {
-        await base44.entities.MeetingSlot.create({
+        const slotId = `${host.id}_${eventDate}_${ts.start.replace(':', '')}`;
+        await base44.entities.MeetingSlot.set(slotId, {
           hostId: host.id,
           hostNombre: `${host.nombre} ${host.apellidos}`,
           hostEmpresa: host.empresa || "",
@@ -89,8 +87,8 @@ export default function SlotModal({ host, currentAttendee, allSlots, eventDate, 
           horaInicio: ts.start,
           horaFin: ts.end,
           estado: "disponible",
-          solicitantes: [newSolicitante]
-        });
+          solicitantes: arrayUnion(newSolicitante)
+        }, { merge: true });
       }
 
       // Enviar email

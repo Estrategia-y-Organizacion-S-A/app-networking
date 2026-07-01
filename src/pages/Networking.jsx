@@ -10,7 +10,7 @@ import PageLayout from "@/components/layout/PageLayout";
 import AttendeeCard from "@/components/networking/AttendeeCard";
 import SlotModal from "@/components/networking/SlotModal";
 import AttendeeLogin from "@/pages/AttendeeLogin";
-import { isNetworkingVisible, isAdminLoggedIn, SECTORES } from "@/lib/eventUtils";
+import { isNetworkingVisible, isAdminLoggedIn, SECTORES, BLOCKED_MEETING_EMAILS } from "@/lib/eventUtils";
 import { getAttendeeSession, saveAttendeeSession, clearAttendeeSession } from "@/lib/attendeeAuth";
 
 export default function Networking() {
@@ -41,6 +41,7 @@ export default function Networking() {
       const sanitized = attList.map(a => {
         if (currentAttendee && String(a.id) === String(currentAttendee.id)) return a;
         const safe = { ...a };
+        safe.canReceiveMeetings = !BLOCKED_MEETING_EMAILS.includes((safe.email || "").toLowerCase());
         delete safe.passwordHash;
         if (!safe.perfilPublico) {
           delete safe.email;
@@ -60,6 +61,10 @@ export default function Networking() {
     const matchName = `${a.nombre} ${a.apellidos} ${a.empresa}`.toLowerCase().includes(searchText.toLowerCase());
     const matchSector = filterSector === "all" || a.sector === filterSector;
     return matchName && matchSector;
+  }).sort((a, b) => {
+    if (String(a.id) === String(currentAttendee.id)) return -1;
+    if (String(b.id) === String(currentAttendee.id)) return 1;
+    return 0;
   });
 
   const handleLogout = () => {
@@ -197,7 +202,7 @@ export default function Networking() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredAttendees.map(attendee => (
-              <motion.div key={attendee.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <motion.div key={attendee.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="h-full">
                 <AttendeeCard
                   attendee={attendee}
                   currentUserId={currentAttendee.id}

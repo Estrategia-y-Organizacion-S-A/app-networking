@@ -41,8 +41,7 @@ export default function Navbar() {
             <img 
               src="/logo.png" 
               alt="Galicia Suroeste Logo" 
-              className="h-10 w-auto" 
-              style={{ filter: "invert(34%) sepia(93%) saturate(2521%) hue-rotate(167deg) brightness(95%) contrast(102%)" }}
+              className="h-10 w-auto"
             />
           </Link>
 

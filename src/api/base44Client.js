@@ -1,17 +1,17 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, addDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, addDoc, setDoc, runTransaction, writeBatch } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 // ==========================================
 // CONFIGURACIÓN DE FIREBASE
 // ==========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyAh1Cn9eH1Pf2xQNIFpu2WhU44_IAXl0VU",
-  authDomain: "galicia-suroeste-networking.firebaseapp.com",
-  projectId: "galicia-suroeste-networking",
-  storageBucket: "galicia-suroeste-networking.firebasestorage.app",
-  messagingSenderId: "65024995931",
-  appId: "1:65024995931:web:14421191f29496ed91857e"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -19,7 +19,13 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 function createEntity(collectionName) {
+  let listCache = { data: null, timestamp: 0 };
+  const CACHE_TTL = 15000; // 15 segundos
+
   return {
+    clearCache() {
+      listCache = { data: null, timestamp: 0 };
+    },
     async get(id) {
       const docRef = doc(db, collectionName, String(id));
       const snapshot = await getDoc(docRef);
@@ -29,31 +35,40 @@ function createEntity(collectionName) {
       return null;
     },
 
-    async list() {
+    async list(force = false) {
+      if (!force && listCache.data && (Date.now() - listCache.timestamp < CACHE_TTL)) {
+        return listCache.data;
+      }
       const colRef = collection(db, collectionName);
       const snapshot = await getDocs(colRef);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      listCache = { data, timestamp: Date.now() };
+      return data;
     },
 
     async create(data) {
+      this.clearCache();
       const colRef = collection(db, collectionName);
       const docRef = await addDoc(colRef, data);
       return { id: docRef.id, ...data };
     },
 
-    async set(id, data) {
+    async set(id, data, options = {}) {
+      this.clearCache();
       const docRef = doc(db, collectionName, String(id));
-      await setDoc(docRef, data);
+      await setDoc(docRef, data, options);
       return { id: String(id), ...data };
     },
 
     async update(id, data) {
+      this.clearCache();
       const docRef = doc(db, collectionName, String(id));
       await updateDoc(docRef, data);
       return { id: String(id), ...data };
     },
 
     async delete(id) {
+      this.clearCache();
       const docRef = doc(db, collectionName, String(id));
       await deleteDoc(docRef);
     },
@@ -68,11 +83,7 @@ function createEntity(collectionName) {
       }
       const snapshot = await getDocs(q);
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    },
-
-    subscribe(_callback) {
-      return () => {};
-    },
+    }
   };
 }
 
@@ -83,4 +94,6 @@ export const base44 = {
     MeetingSlot: createEntity('meetingSlots'),
     EventConfig: createEntity('eventConfig'),
   },
+  runTransaction: (updateFunction) => runTransaction(db, updateFunction),
+  writeBatch: () => writeBatch(db)
 };
